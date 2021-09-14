@@ -1,18 +1,29 @@
 const express = require('express');
-const app = express();
+const { ApolloServer } = require('apollo-server-express');
+const { ApolloServerPluginDrainHttpServer, ApolloServerPluginLandingPageGraphQLPlayground } = require('apollo-server-core')
+const http = require('http')
 
-// Please use apollo server to implement your graphql query
-// const { ApolloServer } = require('apollo-server-express');
-// const server = new ApolloServer({
-//  //...
-// });
-// server.applyMiddleware({ app, path:"/graphql" });
+const expressApp = express();
+const httpServer = http.createServer(expressApp)
+const simplyretsClient = require('./simplyrets-client')('simplyrets', 'simplyrets')
 
-/** Please remove me line 11-14 **/
-app.get('*', (req, res, next) => {
-    res.send("Good luck! 😀")
-});
+const resolvers = require('./resolvers')(simplyretsClient)
 
-app.listen({ port: 4000 }, () =>
-    console.log(`Listening on http://localhost:4000/graphql`)
-);
+const graphqlServer = new ApolloServer({
+    typeDefs: require('./schema'),
+    resolvers,
+    plugins: [
+        ApolloServerPluginDrainHttpServer({ httpServer }), //Plugin to avoid sending request when we send the SIGNINT signal to stop.
+        ApolloServerPluginLandingPageGraphQLPlayground()
+    ],
+    context: require('./basicAuthCtx')
+})
+
+graphqlServer.start()
+    .then(() => {
+        graphqlServer.applyMiddleware({ app: expressApp, path: '/graphql' })
+        return new Promise(resolve => httpServer.listen({ port: 4000 }, resolve))
+    }).then(() => {
+        console.log(`Listening on http://localhost:4000/graphql`)
+    })
+
